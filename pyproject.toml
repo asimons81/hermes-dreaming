@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hermes-dreaming"
+version = "0.1.0"
+description = "Staged self-improvement engine for Hermes-style memory and skill updates"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+authors = [
+  {name = "Tony Simons"},
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+llm = [
+  "openai>=1.30.0",
+]
+
+[project.scripts]
+dreaming = "hermes_dreaming.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hermes_dreaming"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
