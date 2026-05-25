@@ -1,4 +1,6 @@
-"""Hermes Dreaming, staged self-improvement for memory and skills."""
+"""Hermes Dreaming, staged self-improvement for memory, skills, and facts."""
 
-__all__ = ["__version__"]
+from .artifact import DreamArtifact, DreamProposal, SourceSnapshot
+
+__all__ = ["DreamArtifact", "DreamProposal", "SourceSnapshot", "__version__"]
 __version__ = "0.1.0"

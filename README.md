@@ -1,33 +1,56 @@
 # hermes-dreaming
 
-A standalone, open-source implementation of the **Hermes Dreaming** contract.
+A standalone, open-source implementation of the Hermes Dreaming contract.
 
-Dreaming is a staged self-improvement loop for Hermes-style agent memories and
-skills. It reads recent experience, proposes durable changes, and applies only
-approved updates to live state.
+Hermes Dreaming stages proposed changes in an artifact directory first, then applies them only after an explicit approve/apply step. The MVP is intentionally boring: no silent writes, no hidden background mutation, and no hardcoded personal paths.
 
-## Contract
+## What it does
 
-- Observe recent sessions plus durable context
-- Propose memory, skill, and fact-store changes with provenance
-- Review proposals before applying
-- Apply only approved changes
-- Verify the updated state after writeback
+- reads configured source files or directories
+- scans for deterministic `DREAM:` markers in session-style text
+- stages memory, user, skill, and fact proposals in an artifact directory
+- validates paths, provenance, and secret-like content before apply
+- applies approved proposals with backups
+- discards staged artifacts without touching live files
 
-## Current status
+## CLI
 
-This repository is the project home and implementation workspace. The first wave
-focuses on a safe MVP, clear artifact format, and testable apply/discard flow.
+```bash
+dreaming create --live-root ./live --artifact-root ./artifacts --source ./sources
+dreaming diff ./artifacts/<artifact-id>
+dreaming validate ./artifacts/<artifact-id> --live-root ./live
+dreaming apply ./artifacts/<artifact-id> --live-root ./live --backup-root ./backups --approve all
+dreaming discard ./artifacts/<artifact-id> --archive-root ./archive
+dreaming status --artifact-root ./artifacts
+```
 
-## Repo layout
+## Dream marker format
 
-- `brief.md` — project brief and research notes
-- `research/` — overlap research and upstream references
-- `specs/` — design docs and MVP contract details
-- `src/hermes_dreaming/` — package source
-- `tests/` — unit and integration tests
+The offline MVP provider looks for lines like:
 
-## Notes
+```text
+DREAM: memory: Keep updates short and concrete.
+DREAM: user: Prefer concise status updates.
+DREAM: fact: {"type": "preference", "key": "tone", "value": "casual"}
+DREAM: skill: path=skills/review.md | Preserve review gates and backups.
+```
 
-This repo is intended to stay open-source friendly from day one: no secrets, no
-hardcoded personal data, and no hidden side-effect paths.
+## Artifact layout
+
+Each run writes a staged artifact directory containing:
+
+- `manifest.json`
+- `REPORT.md`
+- `sources.jsonl`
+- `proposals.jsonl`
+
+The artifact is intentionally simple, deterministic, and easy to review in git or on disk.
+
+## Development
+
+```bash
+pytest -q
+python -m build --wheel
+```
+
+The repo is intentionally self-contained and safe for public release review.

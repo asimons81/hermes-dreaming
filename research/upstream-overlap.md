@@ -1,42 +1,70 @@
 # Upstream overlap research
 
-## What is already in flight in `NousResearch/hermes-agent`
+Date: 2026-05-25
 
-The upstream repo already has multiple open items in the exact neighborhood of this project:
+## Scope checked
+- Local brief: `brief.md`
+- Local scaffold: `README.md`, `pyproject.toml`, `src/hermes_dreaming/cli.py`, `tests/test_smoke.py`
+- Official upstream repo checked: `NousResearch/hermes-agent`
 
-- **#10771** — *Feature Request: Automatic Memory Consolidation (Auto Dream)*
-- **#5533** — *feat(dreaming): introduce stable Dreaming reflection mode across CLI and gateway*
-- **#30220** — *Background Self-Improvement Review misclassifies content between memory/skill/user stores*
-- **#18369** — *Nudge counters reset on /new — self-improvement never triggers for short-session users*
-- **#19324** — *policy to control whether write operations need approval before being learned during self-improvement*
-- **#22112** — *Add self-improvement guardrail for repeated equivalent tool timeouts*
-- **#5641** — *feat: Dream Mode — idle-time 5-stage memory processing pipeline* (open PR)
-- **#9225** — *Add local-first memory recall and dreaming MVP* (open PR)
-- **#10177** — *Feat/sleep memory* (open PR)
-- **#21212** — *4 Anthropic-inspired agent features (Dreaming, Outcomes, Orchestration, Webhooks)* (open PR)
-- **#15426** — *feat: add self-evolution plugin — agent self-optimization system* (open PR)
+## What the local repo is trying to be
+The local brief already defines the right shape: a safe, staged self-improvement engine with explicit apply/discard, deterministic artifacts, provenance, and no silent live mutation.
 
-## What this means for this repo
+That means this repo should stay focused on the contract itself, not on re-creating upstream experiments or UI nouns.
 
-This repository should **not** try to copy upstream PR text or reimplement the same feature names as if they were new discoveries. The safe path is:
+## Upstream work already in flight
+All of the items below were open when checked.
 
-- implement the **staged apply/discard contract** explicitly
-- keep the repo standalone and open-source friendly
-- avoid claiming novelty for the basic Dreaming idea
-- focus on the artifact lifecycle, safety gates, and writeback verification
-- make the implementation easy to review and easy to upstream later if desired
+### 1) User-facing Dreaming / reflection mode
+- Issue #5533, "feat(dreaming): introduce stable Dreaming reflection mode across CLI and gateway"
+- Scope: a first-class `/dreaming` reflection command/path across CLI + gateway, with usable responses and tests.
+- Status note: open issue, not just a discussion.
 
-## Scope adjustment
+### 2) Automatic memory consolidation / auto-dream
+- Issue #10771, "Automatic Memory Consolidation (Auto Dream)"
+- Issue #25309, "Dreaming — Automatic Background Memory Consolidation"
+- Issue #29431, "Plugin Proposal: Dreaming — Automatic Background Memory Consolidation"
+- PR #5641, "Dream Mode — idle-time 5-stage memory processing pipeline" (open, mergeStateStatus DIRTY)
+- PR #9225, "Add local-first memory recall and dreaming MVP" (open, DIRTY)
+- PR #10177, "Feat/sleep memory" (open, DIRTY)
+- PR #30199, "auto-prune low-value entries with metadata tagging and scoring" (open)
 
-Based on the overlap, the MVP should be framed as:
+This cluster already covers the obvious "dream at idle, scan memory, score, dedupe, prune, promote" space.
 
-> a standalone staged self-improvement engine that produces reviewable dream artifacts and applies approved memory/skill/fact updates safely.
+### 3) Background self-improvement review / routing / safety
+- Issue #30220, "Background Self-Improvement Review misclassifies content between memory/skill/user stores"
+- Related open review-routing / notification / gating work: #16761, #18871, #15543, #30820, #30812, #9055, #30531, #30970
+- Related PRs: #15508, #30971, #24392, #24846, #31609, #26547, #27422, #16006, #28727, #27510
 
-That keeps the repo aligned with the approved contract without pretending the idea is brand-new.
+This is the upstream review pipeline and its guardrails. It is not a new dream contract; it is the machinery around automated review.
 
-## Guardrails for the rest of the build
+### 4) Curator / skill lifecycle cleanup and safety
+- Issues: #23794, #26655, #29912, #26326, #23398, #29017, #25839, #27997
+- PRs: #23303, #23502, #24068, #26688, #30108, #23104, #21614
 
-- Do not leak private or user-specific content into docs or tests.
-- Do not over-claim features that are still only proposals upstream.
-- Do not duplicate upstream issue wording verbatim in README or package metadata.
-- Keep the implementation small, testable, and explicit about writeback behavior.
+Curator work is already heavily active around rollback safety, archive behavior, cron references, and skill protection. That space is crowded.
+
+## What this repo must not duplicate
+1. Do not build another user-facing `/dreaming` reflection mode. That space is already occupied by #5533.
+2. Do not duplicate the automatic background consolidation pipeline / plugin proposal / sleep-memory variants. That space is already occupied by #10771, #25309, #29431, #5641, #9225, #10177, and #30199.
+3. Do not re-solve background review classification and routing from scratch. The upstream pain is already being worked in #30220 and the related review-routing PRs.
+4. Do not turn curator into a parallel dream system. Curator should stay curator-like, skill lifecycle safety and cleanup, not the main dream engine.
+
+## Scope adjustment recommendation
+The cleanest upstream contribution target is narrower:
+- a staged, copy-on-write dream artifact flow
+- explicit create / diff / apply / discard semantics
+- provenance attached to every proposed change
+- no silent mutation during generation
+- no background scheduling in v1
+
+That gives the repo a distinct contribution: the safe artifact/apply contract itself, not another competing reflection or auto-prune implementation.
+
+## Bottom line
+There is real overlap upstream, and it is not hypothetical. The upstream repo already has open work for:
+- reflection-style dreaming
+- auto consolidation / sleep / background memory pruning
+- background review fixes
+- curator safety and cleanup
+
+So if we build this repo for a PR, the pitch should be: "staged dream artifacts with explicit apply/discard," not "another Dreaming mode."
