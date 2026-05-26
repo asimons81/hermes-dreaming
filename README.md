@@ -21,7 +21,7 @@ Once installed, use:
 hermes dreaming --help
 ```
 
-The plugin also bundles a Hermes skill for the staged review workflow.
+The plugin also bundles a Hermes skill for the staged review workflow as `hermes-dreaming:dreaming`.
 
 ## Current status
 

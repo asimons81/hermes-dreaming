@@ -52,4 +52,4 @@ def register(ctx) -> None:
 
     skill_md = ROOT / "skills" / "hermes-dreaming" / "SKILL.md"
     if skill_md.exists():
-        ctx.register_skill("hermes-dreaming", skill_md)
+        ctx.register_skill("dreaming", skill_md)
