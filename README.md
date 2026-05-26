@@ -9,7 +9,13 @@ It scans explicit source inputs, stages proposed changes in a reviewable artifac
 
 This repo now ships as a proper Hermes plugin too.
 
-Install from a git checkout with:
+Install from GitHub with:
+
+```bash
+hermes plugins install asimons81/hermes-dreaming --enable
+```
+
+For a local checkout during development:
 
 ```bash
 hermes plugins install file:///path/to/hermes-dreaming --enable
