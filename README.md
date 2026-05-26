@@ -1,5 +1,7 @@
 # hermes-dreaming
 
+![Hermes Dreaming hero banner](assets/readme/hermes-dreaming-hero.png)
+
 A standalone, open-source staged self-improvement engine for Hermes-style memory, user, skill, and fact updates.
 
 It scans explicit source inputs, stages proposed changes in a reviewable artifact directory, and only writes to live state after an explicit apply step.
