@@ -1,5 +1,7 @@
 # hermes-dreaming
 
+[![CI](https://github.com/asimons81/hermes-dreaming/actions/workflows/ci.yml/badge.svg)](https://github.com/asimons81/hermes-dreaming/actions/workflows/ci.yml)
+
 ![Hermes Dreaming hero banner](assets/readme/hermes-dreaming-hero.png)
 
 A standalone, open-source staged self-improvement engine for Hermes-style memory, user, skill, and fact updates.
