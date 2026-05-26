@@ -3,10 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Protocol
 
 from .artifact import DreamProposal, SourceSnapshot
+from .validation import validate_proposals
 
 MARKER_RE = re.compile(r"^\s*(?:-\s*)?DREAM:\s*(memory|user|skill|fact)\s*:\s*(.+?)\s*$", re.IGNORECASE)
 
@@ -174,11 +177,82 @@ class OpenAICompatibleProvider:
         text = getattr(response, "output_text", "").strip()
         if not text:
             raise RuntimeError("provider returned no text")
-        payload = json.loads(text)
+        payload = self._parse_payload(text)
         report = str(payload.get("report", "# Hermes Dreaming Report\n\nNo report provided.\n"))
-        proposals = [DreamProposal.from_dict(item) for item in payload.get("proposals", [])]
-        notes = [str(item) for item in payload.get("notes", [])]
+        proposals = self._normalize_proposals(payload.get("proposals", []), sources)
+        notes = self._normalize_notes(payload.get("notes", []))
         return report, proposals, notes
+
+    def _parse_payload(self, text: str) -> dict[str, object]:
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = self._parse_fenced_payload(text)
+        if not isinstance(parsed, dict):
+            raise RuntimeError("provider returned JSON that is not an object")
+        return parsed
+
+    def _parse_fenced_payload(self, text: str) -> object:
+        match = re.fullmatch(r"\s*```(?:json)?\s*(.*?)\s*```\s*", text, flags=re.IGNORECASE | re.DOTALL)
+        if match is None:
+            raise RuntimeError("provider returned malformed JSON")
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("provider returned malformed fenced JSON") from exc
+
+    def _normalize_notes(self, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if item is not None]
+        return [str(value)]
+
+    def _normalize_proposals(self, value: object, sources: list[SourceSnapshot]) -> list[DreamProposal]:
+        if not isinstance(value, list):
+            return []
+        proposals: list[DreamProposal] = []
+        default_provenance = [source.path for source in sources]
+        for item in value:
+            proposal = self._normalize_proposal(item, default_provenance)
+            if proposal is None:
+                continue
+            if validate_proposals([proposal]):
+                continue
+            proposals.append(proposal)
+        return proposals
+
+    def _normalize_proposal(self, value: object, default_provenance: list[str]) -> DreamProposal | None:
+        if not isinstance(value, dict):
+            return None
+        required = ["id", "target_kind", "target_path", "mode", "summary", "proposed_text"]
+        if any(key not in value for key in required):
+            return None
+        proposed_text = str(value.get("proposed_text", "")).strip()
+        if not proposed_text:
+            return None
+        provenance_value = value.get("provenance")
+        if isinstance(provenance_value, str):
+            provenance = [provenance_value]
+        elif isinstance(provenance_value, list):
+            provenance = [str(item) for item in provenance_value if item is not None and str(item).strip()]
+        else:
+            provenance = default_provenance
+        if not provenance:
+            return None
+        return DreamProposal.from_dict(
+            {
+                "id": str(value["id"]),
+                "target_kind": str(value["target_kind"]),
+                "target_path": str(value["target_path"]),
+                "mode": str(value["mode"]),
+                "summary": str(value["summary"]),
+                "provenance": provenance,
+                "proposed_text": proposed_text,
+                "approved": False,
+                "notes": value.get("notes"),
+            }
+        )
 
     def _build_prompt(self, sources: list[SourceSnapshot], context: DreamContext) -> str:
         source_block = "\n\n".join(f"### {source.path}\n{source.content}" for source in sources)
@@ -186,11 +260,61 @@ class OpenAICompatibleProvider:
             "You are Hermes Dreaming, a staged self-improvement engine.\n"
             "Return JSON only with keys: report, proposals, notes.\n"
             "Each proposal must include id, target_kind, target_path, mode, summary, provenance, proposed_text, approved.\n"
+            "Allowed target_kind values: memory, user, skill, fact. Never use source filenames as target_kind.\n"
+            "Allowed mode values: append_text, jsonl_append. Never use edit/update/replace.\n"
+            "Allowed target_path values: memory.md for memory, user.md for user, facts.jsonl for fact, or skills/<name>.md for skill. Never target source files or absolute paths.\n"
+            "For user preferences, use target_kind user, target_path user.md, mode append_text, and proposed_text as one concise markdown bullet.\n"
+            "For memory notes, use target_kind memory, target_path memory.md, mode append_text, and proposed_text as one concise markdown bullet.\n"
+            "For facts, use target_kind fact, target_path facts.jsonl, mode jsonl_append, and proposed_text as a JSON object string.\n"
+            "Set approved to false for every proposal.\n"
             "Never include secrets, tokens, or hardcoded personal data.\n\n"
             f"Workspace root: {context.workspace_root}\n"
             f"Live root: {context.live_root}\n"
             f"Sources:\n{source_block}\n"
         )
+
+
+@dataclass(slots=True)
+class OllamaProvider(OpenAICompatibleProvider):
+    model: str = "qwen2.5:3b"
+    api_key: str | None = None
+    base_url: str | None = "http://127.0.0.1:11434"
+    name: str = "ollama"
+    timeout_seconds: int = 180
+
+    def generate(self, sources: list[SourceSnapshot], context: DreamContext) -> tuple[str, list[DreamProposal], list[str]]:
+        prompt = self._build_prompt(sources, context)
+        url = f"{(self.base_url or 'http://127.0.0.1:11434').rstrip('/')}/api/chat"
+        body = json.dumps(
+            {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0},
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                raw = response.read().decode("utf-8")
+        except urllib.error.URLError as exc:  # pragma: no cover - network-specific
+            raise RuntimeError(f"ollama request failed: {exc}") from exc
+        try:
+            response_payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("ollama returned malformed response JSON") from exc
+        message = response_payload.get("message")
+        if not isinstance(message, dict):
+            raise RuntimeError("ollama returned no message")
+        text = str(message.get("content", "")).strip()
+        if not text:
+            raise RuntimeError("ollama returned no text")
+        payload = self._parse_payload(text)
+        report = str(payload.get("report", "# Hermes Dreaming Report\n\nNo report provided.\n"))
+        proposals = self._normalize_proposals(payload.get("proposals", []), sources)
+        notes = self._normalize_notes(payload.get("notes", []))
+        return report, proposals, notes
 
 
 def build_provider(name: str, *, model: str | None = None, api_key: str | None = None, base_url: str | None = None) -> DreamProvider:
@@ -199,4 +323,6 @@ def build_provider(name: str, *, model: str | None = None, api_key: str | None =
         return OfflineMarkerProvider()
     if normalized in {"openai", "openai-compatible"}:
         return OpenAICompatibleProvider(model=model or "gpt-4o-mini", api_key=api_key, base_url=base_url)
+    if normalized in {"ollama", "ollama-native"}:
+        return OllamaProvider(model=model or "qwen2.5:3b", api_key=api_key, base_url=base_url or "http://127.0.0.1:11434")
     raise ValueError(f"unknown provider: {name}")
