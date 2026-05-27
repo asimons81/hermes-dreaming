@@ -24,10 +24,17 @@ def _run_dreaming(args: argparse.Namespace) -> int:
     except SystemExit as exc:
         code = exc.code
         if isinstance(code, int):
-            return code
-        return 0 if code in (None, "") else 1
+            if code:
+                raise
+            return 0
+        if code not in (None, ""):
+            raise SystemExit(1)
+        return 0
 
-    return int(result or 0)
+    code = int(result or 0)
+    if code:
+        raise SystemExit(code)
+    return 0
 
 
 def _setup_dreaming_cli(parser: argparse.ArgumentParser) -> None:
