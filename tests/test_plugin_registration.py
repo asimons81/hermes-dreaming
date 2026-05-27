@@ -34,6 +34,7 @@ def test_register_exposes_cli_slash_and_skill() -> None:
         "Route Hermes Dreaming artifact commands through the chat surface "
         "without mutating live state until apply time."
     )
+    assert "update" in ctx.commands["dreaming"]["args_hint"]
 
     assert ctx.skills
     skill_name, skill_path = ctx.skills[0]

@@ -27,6 +27,7 @@ dreaming validate ./artifacts/<artifact-id> --live-root ./live
 dreaming apply ./artifacts/<artifact-id> --live-root ./live --backup-root ./backups --approve all
 dreaming discard ./artifacts/<artifact-id> --archive-root ./archive
 dreaming status --artifact-root ./artifacts
+dreaming update
 ```
 
 ## Safe usage pattern

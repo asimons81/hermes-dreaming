@@ -2,8 +2,7 @@
 
 ## Unreleased
 
-- Added GitHub Actions CI plus maintainer-mode branch protection for contributor PRs.
-- Added contributor-facing onboarding docs, security policy, code of conduct, PR template, issue templates, and code owners.
+- Added a safe `dreaming update` command for fast-forward plugin updates with dirty-tree protection and optional pytest verification.
 - Added a proper Hermes plugin wrapper so the repo can install as `hermes-dreaming`.
 - Bundled a Hermes skill for the staged self-improvement workflow.
 - Added an install-time handoff note for the Hermes plugin path.

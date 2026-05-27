@@ -10,6 +10,7 @@ from .commands.compact import handle as compact_artifacts
 from .commands.install_cron import handle as install_cron_command
 from .commands.review import handle as review_artifact
 from .commands.status import build_status_snapshot, render_status
+from .commands.update import handle as update_command, render_update_result
 from .state import record_run
 from .validation import validate_artifact
 
@@ -85,6 +86,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", help="List known artifacts")
     status.add_argument("--artifact-root", type=Path, default=Path.cwd() / ".dreaming" / "artifacts", help="Where artifacts are stored")
+
+    update = sub.add_parser("update", help="Safely fast-forward the installed Hermes Dreaming checkout")
+    update.add_argument("--remote", default="origin", help="Git remote to update from")
+    update.add_argument("--branch", default="main", help="Branch to fast-forward onto")
+    update.add_argument("--check", action="store_true", help="Report update status without pulling")
+    update.add_argument("--no-verify", action="store_true", help="Skip the post-update pytest smoke")
 
     return parser
 
@@ -330,6 +337,24 @@ def main(argv: list[str] | None = None) -> int:
         snapshot = build_status_snapshot(artifact_root=args.artifact_root)
         print(render_status(snapshot).rstrip())
         return 0
+
+    if args.command == "update":
+        repo_root = Path(__file__).resolve().parents[2]
+        result = update_command(
+            repo_root=repo_root,
+            remote=args.remote,
+            branch=args.branch,
+            check=args.check,
+            verify=not args.no_verify,
+        )
+        print(render_update_result(result).rstrip())
+        _record_cli_run(
+            "update",
+            success=result.success,
+            summary=result.message.splitlines()[0] if result.message else "update completed",
+            errors=[result.message] if not result.success and result.message else None,
+        )
+        return 0 if result.success else 1
 
     parser.error(f"unknown command: {args.command}")
     return 2

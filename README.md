@@ -29,17 +29,25 @@ Once installed, use:
 hermes dreaming --help
 ```
 
+Update the installed checkout with:
+
+```bash
+hermes dreaming update
+```
+
+Use `hermes dreaming update --check` if you only want the status check.
+
 The plugin also bundles a Hermes skill for the staged review workflow as `hermes-dreaming:dreaming`.
 
 ## Current status
 
-- **Full feature set:** create, review, diff, validate, apply, discard, compact, install-cron, status — all implemented
+- **Full feature set:** create, review, diff, validate, apply, discard, compact, install-cron, status, update — all implemented
 - **Live memory mutation** with score gating, idempotence, backups, and capacity enforcement
 - **Run ledger + DREAMS.md diary** for auditability
 - **Hermes-native plugin** — install once, use everywhere
 - **Recent-session reader** with fallback chain (SessionDB → SQLite → pointer-log)
 - **Cron installer** for nightly dry-run review
-- **45 tests passed**, wheel builds clean
+- **Test suite passes locally**
 
 ## Install
 
@@ -84,6 +92,10 @@ dreaming install-cron --schedule "0 3 * * *"
 
 # Show artifact status
 dreaming status --artifact-root ./artifacts
+
+# Safely update the installed checkout
+dreaming update
+dreaming update --check
 ```
 
 ## Dream markers

@@ -1,8 +1,8 @@
 name: hermes-dreaming
-version: 0.1.0
+version: 0.1.1
 description: >-
   Staged self-improvement engine for Hermes-style memory, user, skill,
   and fact updates. Commands: create, review, diff, validate, apply,
-  discard, compact, install-cron, status.
+  discard, compact, install-cron, status, update.
 author: Tony Simons
 kind: standalone

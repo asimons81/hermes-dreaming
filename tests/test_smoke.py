@@ -3,7 +3,7 @@ from hermes_dreaming.cli import main
 
 
 def test_version() -> None:
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.1.1"
 
 
 def test_status_command(capsys) -> None:

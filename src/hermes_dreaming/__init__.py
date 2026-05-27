@@ -12,7 +12,7 @@ from . import session_reader
 from .artifact import DreamArtifact, DreamProposal, SourceSnapshot
 
 __all__ = ["DreamArtifact", "DreamProposal", "SourceSnapshot", "__version__", "register", "session_reader"]
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def _repo_root() -> Path:
@@ -99,7 +99,7 @@ def register(ctx) -> None:
             "Route Hermes Dreaming artifact commands through the chat surface "
             "without mutating live state until apply time."
         ),
-        args_hint="create|review|diff|validate|apply|discard|compact|install-cron|status",
+        args_hint="create|review|diff|validate|apply|discard|compact|install-cron|status|update",
     )
 
     skill_md = _skill_path()
