@@ -11,6 +11,7 @@ from .commands.install_cron import handle as install_cron_command
 from .commands.review import handle as review_artifact
 from .commands.status import build_status_snapshot, render_status
 from .commands.update import handle as update_command, render_update_result
+from .diffing import render_artifact_diff
 from .state import record_run
 from .validation import validate_artifact
 
@@ -42,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     diff = sub.add_parser("diff", help="Show a staged artifact")
     diff.add_argument("artifact", type=Path, help="Artifact directory")
+    diff.add_argument("--live-root", type=Path, default=None, help="Root of the live workspace")
 
     validate = sub.add_parser("validate", help="Validate a staged artifact")
     validate.add_argument("artifact", type=Path, help="Artifact directory")
@@ -206,18 +208,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "diff":
         artifact = load_artifact(args.artifact)
-        print(artifact.report.rstrip())
-        if artifact.proposals:
-            print()
-            for proposal in artifact.proposals:
-                print(f"- {proposal.id}: {proposal.target_kind} -> {proposal.target_path} [{proposal.mode}]")
-                print(f"  {proposal.summary}")
+        print(render_artifact_diff(artifact, live_root=args.live_root).rstrip())
         _record_cli_run(
             "diff",
             success=True,
             artifact_id=artifact.artifact_id,
             artifact_status=artifact.status,
             artifact_dir=args.artifact,
+            live_root=args.live_root,
             summary=f"inspected artifact {artifact.artifact_id}",
         )
         return 0

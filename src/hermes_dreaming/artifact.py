@@ -49,6 +49,7 @@ class DreamProposal:
     provenance: list[str]
     proposed_text: str
     approved: bool
+    applied: bool = False
     notes: str | None = None
 
     @classmethod
@@ -62,6 +63,7 @@ class DreamProposal:
             provenance=list(data.get('provenance', [])),
             proposed_text=data.get('proposed_text', ''),
             approved=bool(data.get('approved', False)),
+            applied=bool(data.get('applied', False)),
             notes=data.get('notes'),
         )
 
@@ -77,6 +79,12 @@ class DreamArtifact:
     report: str
     sources: list[SourceSnapshot] = field(default_factory=list)
     proposals: list[DreamProposal] = field(default_factory=list)
+    validation_errors: list[str] = field(default_factory=list)
+    apply_errors: list[str] = field(default_factory=list)
+    applied_proposal_ids: list[str] = field(default_factory=list)
+    backup_paths: list[str] = field(default_factory=list)
+    apply_started_at: str | None = None
+    apply_finished_at: str | None = None
     applied_at: str | None = None
     discarded_at: str | None = None
 
@@ -92,6 +100,12 @@ class DreamArtifact:
             report=data.get('report', ''),
             sources=[SourceSnapshot.from_dict(item) for item in data.get('sources', [])],
             proposals=[DreamProposal.from_dict(item) for item in data.get('proposals', [])],
+            validation_errors=list(data.get('validation_errors', []) or []),
+            apply_errors=list(data.get('apply_errors', []) or []),
+            applied_proposal_ids=list(data.get('applied_proposal_ids', []) or []),
+            backup_paths=list(data.get('backup_paths', []) or []),
+            apply_started_at=data.get('apply_started_at'),
+            apply_finished_at=data.get('apply_finished_at'),
             applied_at=data.get('applied_at'),
             discarded_at=data.get('discarded_at'),
         )

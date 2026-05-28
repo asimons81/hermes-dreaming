@@ -41,10 +41,10 @@ The plugin also bundles a Hermes skill named `dreaming`. Load that bare name ins
 
 ## Current status
 
-- **Full feature set:** create, review, diff, validate, apply, discard, compact, install-cron, status, update — all implemented
+- **Full feature set:** create, review, diff, validate, apply, discard, compact, install-cron, status, update, all implemented
 - **Live memory mutation** with score gating, idempotence, backups, and capacity enforcement
 - **Run ledger + DREAMS.md diary** for auditability
-- **Hermes-native plugin** — install once, use everywhere
+- **Hermes-native plugin:** install once, use everywhere
 - **Recent-session reader** with fallback chain (SessionDB → SQLite → pointer-log)
 - **Cron installer** for nightly dry-run review
 - **Test suite passes locally**
@@ -73,7 +73,7 @@ dreaming create --live-root ./live --artifact-root ./artifacts --source ./source
 dreaming review --live-root ./live --artifact-root ./artifacts --source ./sources
 
 # Inspect an artifact
-dreaming diff ./artifacts/<artifact-id>
+dreaming diff ./artifacts/<artifact-id> --live-root ./live
 
 # Validate a staged artifact
 dreaming validate ./artifacts/<artifact-id> --live-root ./live
@@ -98,9 +98,18 @@ dreaming update
 dreaming update --check
 ```
 
+## Quickstart demo fixture
+
+If you want the shortest path to "oh, I get it," use `examples/quickstart/`. It is an offline fixture, so no API key or external model access is required.
+If the `dreaming` entrypoint is not installed yet, swap in `python -m hermes_dreaming` for the same commands.
+
+- Fixture notes: `examples/quickstart/README.md`
+- Runnable walkthrough: `docs/quickstart.md`
+
 ### Command notes
 
 - `create` and `review` accept repeatable `--source` plus optional `--provider`, `--model`, `--api-key`, and `--base-url`.
+- `diff` accepts optional `--live-root` and renders unified diffs when the live target root is available.
 - `apply` accepts repeatable `--approve` values, including `all`.
 - `update` supports `--remote`, `--branch`, `--check`, and `--no-verify`.
 

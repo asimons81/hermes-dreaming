@@ -70,7 +70,7 @@ Defaults:
 - `--provider` defaults to `offline-marker`
 
 ### `dreaming diff`
-Prints the staged report and proposal summary for review.
+Prints live-target unified diffs for each proposal when a live root is available, otherwise falls back to the staged report and proposal summary.
 
 ### `dreaming validate`
 Runs the validation gate without mutating live state.

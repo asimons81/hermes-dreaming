@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-STATE_ROOT = Path.home() / ".hermes" / "dreaming"
+
+def _default_state_root() -> Path:
+    configured = os.environ.get("HERMES_DREAMING_STATE_ROOT")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".hermes" / "dreaming"
+
+
+STATE_ROOT = _default_state_root()
 STATE_JSON = STATE_ROOT / "state.json"
 RUN_LEDGER_JSONL = STATE_ROOT / "runs.jsonl"
 DREAMS_MD_PATH = STATE_ROOT / "DREAMS.md"

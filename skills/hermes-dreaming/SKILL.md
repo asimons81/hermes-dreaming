@@ -23,7 +23,7 @@ Hermes-dreaming scans explicit source inputs, stages proposed changes in an arti
 ```bash
 dreaming create --live-root ./live --artifact-root ./artifacts --source ./sources
 dreaming review --live-root ./live --artifact-root ./artifacts --source ./sources
-dreaming diff ./artifacts/<artifact-id>
+dreaming diff ./artifacts/<artifact-id> --live-root ./live
 dreaming validate ./artifacts/<artifact-id> --live-root ./live
 dreaming apply ./artifacts/<artifact-id> --live-root ./live --backup-root ./backups --approve all
 dreaming discard ./artifacts/<artifact-id> --archive-root ./archive
