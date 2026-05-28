@@ -62,7 +62,10 @@ def _setup_dreaming_cli(parser: argparse.ArgumentParser) -> None:
 
 
 def _run_dreaming_cli(args: argparse.Namespace) -> int:
-    return _invoke_dreaming_main(list(getattr(args, "dreaming_args", []) or []))
+    code = _invoke_dreaming_main(list(getattr(args, "dreaming_args", []) or []))
+    if code:
+        raise SystemExit(code)
+    return 0
 
 
 def _run_dreaming_slash(raw_args: str) -> str:
