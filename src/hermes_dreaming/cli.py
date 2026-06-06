@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 import os
 from pathlib import Path
 
 from .analyze import DreamRunConfig, create_dream_artifact, render_report_card_json, render_report_card_markdown
 from .artifact import load_artifact
-from .apply import DreamApplyError, apply_artifact, discard_artifact
+from .apply import (
+    DreamApplyError,
+    DreamRevertError,
+    apply_artifact,
+    discard_artifact,
+    parse_filter_list,
+    revert_artifact,
+    validate_priority_filter,
+    validate_target_kind_filter,
+)
 from .commands.compact import handle as compact_artifacts
 from .commands.install_cron import handle as install_cron_command
 from .commands.harvest import harvest_recent
@@ -24,6 +34,7 @@ from .commands.review import (
 from .commands.status import build_status_snapshot, render_status
 from .commands.update import handle as update_command, render_update_result
 from .diffing import render_artifact_diff
+from .providers import list_providers, render_providers_table
 from .state import record_run
 from .validation import validate_artifact
 
@@ -51,9 +62,17 @@ def _add_creation_arguments(parser: argparse.ArgumentParser, *, required_source:
         help="Where artifacts are stored",
     )
     parser.add_argument("--source", action="append", required=False, type=Path, help="Source file or directory to scan")
-    parser.add_argument("--recent", type=int, default=None, help="Harvest N recent local Hermes sessions into a source bundle before staging")
-    parser.add_argument("--harvest-out", type=Path, default=None, help="Optional output path for the --recent source bundle")
-    parser.add_argument("--provider", default="offline-marker", help="Analysis provider to use")
+    parser.add_argument("--recent", type=int, default=None, help="Harvest N recent local Hermes sessions into a source bundle before staging (alias for --from-sessions)")
+    parser.add_argument("--from-sessions", dest="from_sessions", type=int, default=None, help="Harvest N recent local Hermes sessions into a source bundle before staging")
+    parser.add_argument(
+        "--from-since",
+        dest="from_since",
+        default=None,
+        help="Time window for --from-sessions: e.g. '7d', '12h', '2w'. Suffix h/d/w. Capped at 50 sessions.",
+    )
+    parser.add_argument("--harvest-out", type=Path, default=None, help="Optional output path for the --from-sessions / --recent source bundle")
+    parser.add_argument("--provider", default="offline-marker", help="Analysis provider to use (or 'offline-marker' when --no-llm is set)")
+    parser.add_argument("--no-llm", dest="no_llm", action="store_true", help="Shorthand for --provider offline-marker (skip any external LLM)")
     parser.add_argument("--model", default=None, help="Optional provider model name")
     parser.add_argument("--api-key", default=None, help="Optional provider API key")
     parser.add_argument("--base-url", default=None, help="Optional provider base URL")
@@ -78,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     inbox.add_argument("--state", default=None, help="Comma-separated inbox states to include")
     inbox.add_argument("--priority", default=None, help="Comma-separated priority values to include")
     inbox.add_argument("--limit", type=int, default=None, help="Maximum inbox rows to show")
+    inbox.add_argument("--apply-ready", dest="apply_ready", action="store_true", help="Filter to artifacts ready to apply (approved, no pending blockers)")
     inbox.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     review = sub.add_parser("review", help="Create a staged artifact or open an existing one")
@@ -120,6 +140,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where backups are stored",
     )
     apply.add_argument("--approve", action="append", default=[], help="Compatibility shortcut: approve a proposal id or 'all' before applying")
+    apply.add_argument("--dry-run", dest="dry_run", action="store_true", help="Preview what apply would do without writing to live state or creating backups")
+    apply.add_argument(
+        "--priority",
+        default=None,
+        help="Comma-separated priority values to include (low,normal,high)",
+    )
+    apply.add_argument(
+        "--target-kind",
+        dest="target_kind",
+        default=None,
+        help="Comma-separated target_kind values to include (memory,user,skill,fact)",
+    )
+
+    revert = sub.add_parser("revert", help="Restore an applied artifact's live files from the recorded backups")
+    revert.add_argument("artifact", type=Path, help="Artifact directory")
+    revert.add_argument("--live-root", type=Path, default=None, help="Root of the live workspace (defaults to artifact.workspace_root)")
+    revert.add_argument("--backup-root", type=Path, default=None, help="Where backups are stored (defaults to <live-root>/.dreaming/backups)")
+    revert.add_argument("--yes", dest="yes", action="store_true", help="Skip the confirmation prompt (required for non-interactive use)")
 
     discard = sub.add_parser("discard", help="Discard a staged artifact")
     discard.add_argument("artifact", type=Path, help="Artifact directory")
@@ -172,6 +210,10 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--check", action="store_true", help="Report update status without pulling")
     update.add_argument("--no-verify", action="store_true", help="Skip the post-update pytest smoke")
 
+    providers = sub.add_parser("providers", help="Discover available analysis providers")
+    providers_sub = providers.add_subparsers(dest="providers_command", required=True)
+    providers_sub.add_parser("list", help="List available providers and their status")
+
     return parser
 
 
@@ -211,19 +253,60 @@ def _record_cli_run(
     record_run(record)
 
 
+def _parse_time_window(value: str) -> timedelta | None:
+    """Parse a time-window string like '7d', '12h', '2w' into a timedelta."""
+    text = (value or "").strip().lower()
+    if not text:
+        return None
+    suffix = text[-1]
+    if suffix not in {"h", "d", "w"}:
+        raise ValueError(f"time window must end with h, d, or w (got {value!r})")
+    try:
+        number = int(text[:-1])
+    except ValueError as exc:
+        raise ValueError(f"time window must be a whole number followed by h, d, or w (got {value!r})") from exc
+    if number <= 0:
+        raise ValueError(f"time window must be greater than 0 (got {value!r})")
+    if suffix == "h":
+        return timedelta(hours=number)
+    if suffix == "d":
+        return timedelta(days=number)
+    return timedelta(weeks=number)
+
+
 def _resolve_creation_sources(args: argparse.Namespace, parser: argparse.ArgumentParser, *, command: str) -> list[Path]:
     sources = list(getattr(args, "source", None) or [])
+    from_sessions = getattr(args, "from_sessions", None)
     recent = getattr(args, "recent", None)
-    if recent is not None:
-        if recent <= 0:
-            parser.error(f"{command} --recent must be greater than 0")
+    from_since = getattr(args, "from_since", None)
+    harvest_count = from_sessions if from_sessions is not None else recent
+    if harvest_count is not None or from_since is not None:
+        if harvest_count is not None and harvest_count <= 0:
+            parser.error(f"{command} --from-sessions/--recent must be greater than 0")
+        if harvest_count is None:
+            # --from-since without an explicit count: cap at 50
+            harvest_count = 50
+        if from_since is not None:
+            try:
+                window = _parse_time_window(from_since)
+            except ValueError as exc:
+                parser.error(str(exc))
+            if window is not None:
+                # Reduce count based on the time window: longer window => more sessions.
+                # Cap at 50 per the spec.
+                days = window.total_seconds() / 86400
+                harvest_count = max(1, min(50, int(days * 4) or 1))
         harvest_out = getattr(args, "harvest_out", None)
         if harvest_out is None:
             harvest_out = Path(args.artifact_root) / "_sources" / "recent-sessions.md"
-        result = harvest_recent(recent=recent, output_path=harvest_out)
-        sources.append(result.output_path)
+        result = harvest_recent(recent=harvest_count, output_path=harvest_out)
+        print(f"harvest: {result.output_path}")
+        print(f"sessions: {len(result.sessions)}")
+        print(f"redactions: {result.redaction_count}")
+        if result.output_path is not None:
+            sources.append(result.output_path)
     if not sources:
-        parser.error(f"{command} requires --source or --recent")
+        parser.error(f"{command} requires --source, --from-sessions, --from-since, or --recent")
     return sources
 
 
@@ -261,13 +344,16 @@ def _render_inbox_digest(result) -> str:
 
 def _run_creation_like(command: str, args: argparse.Namespace, *, dry_run: bool, parser: argparse.ArgumentParser | None = None) -> int:
     source_paths = _resolve_creation_sources(args, parser or argparse.ArgumentParser(prog="dreaming"), command=command)
+    provider_name = args.provider
+    if getattr(args, "no_llm", False):
+        provider_name = "offline-marker"
     result = (
         review_artifact(
             DreamRunConfig(
                 live_root=args.live_root,
                 artifact_root=args.artifact_root,
                 source_paths=source_paths,
-                provider_name=args.provider,
+                provider_name=provider_name,
                 model=args.model,
                 api_key=args.api_key,
                 base_url=args.base_url,
@@ -279,7 +365,7 @@ def _run_creation_like(command: str, args: argparse.Namespace, *, dry_run: bool,
                 live_root=args.live_root,
                 artifact_root=args.artifact_root,
                 source_paths=source_paths,
-                provider_name=args.provider,
+                provider_name=provider_name,
                 model=args.model,
                 api_key=args.api_key,
                 base_url=args.base_url,
@@ -347,6 +433,7 @@ def main(argv: list[str] | None = None) -> int:
             args.artifact_root,
             state_filter=parse_filter(args.state),
             priority_filter=parse_filter(args.priority),
+            apply_ready=getattr(args, "apply_ready", False),
             limit=args.limit,
         )
         print((render_inbox_json(result) if args.json else render_inbox(result)).rstrip())
@@ -490,6 +577,23 @@ def main(argv: list[str] | None = None) -> int:
         approve_all = any(item.lower() in {"all", "*", "true", "yes"} for item in args.approve)
         approve_ids = [item for item in args.approve if item.lower() not in {"all", "*", "true", "yes"}]
         artifact = load_artifact(args.artifact)
+        priority_filter = None
+        target_kind_filter = None
+        try:
+            priority_filter = validate_priority_filter(parse_filter_list(getattr(args, "priority", None)))
+            target_kind_filter = validate_target_kind_filter(parse_filter_list(getattr(args, "target_kind", None)))
+        except DreamApplyError as exc:
+            print(str(exc))
+            _record_cli_run(
+                "apply",
+                success=False,
+                artifact_id=artifact.artifact_id,
+                artifact_status=artifact.status,
+                artifact_dir=args.artifact,
+                live_root=args.live_root,
+                summary=str(exc),
+            )
+            return 1
         try:
             applied = apply_artifact(
                 args.artifact,
@@ -497,6 +601,9 @@ def main(argv: list[str] | None = None) -> int:
                 backup_root=args.backup_root,
                 approve_all=approve_all,
                 approve_ids=approve_ids,
+                dry_run=args.dry_run,
+                priority_filter=priority_filter,
+                target_kind_filter=target_kind_filter,
             )
         except DreamApplyError as exc:
             print(str(exc))
@@ -510,6 +617,28 @@ def main(argv: list[str] | None = None) -> int:
                 summary=str(exc),
             )
             return 1
+        if args.dry_run:
+            report = getattr(applied, "dry_run_report", None)
+            print("apply: dry-run")
+            print(f"artifact: {applied.artifact_id}")
+            print(f"would_apply_proposals: {len(report.would_apply_proposal_ids) if report else 0}")
+            print(f"would_skip_proposals: {len(report.would_skip_proposal_ids) if report else 0}")
+            print(f"would_backup_paths: {len(report.would_backup_paths) if report else 0}")
+            print(f"would_write_targets: {len(report.would_write_targets) if report else 0}")
+            if report and (report.filtered_out_priority or report.filtered_out_target_kind):
+                print(f"filtered_out_priority: {', '.join(report.filtered_out_priority)}")
+                print(f"filtered_out_target_kind: {', '.join(report.filtered_out_target_kind)}")
+            print("no live writes performed")
+            _record_cli_run(
+                "apply",
+                success=True,
+                artifact_id=applied.artifact_id,
+                artifact_status=applied.status,
+                artifact_dir=args.artifact,
+                live_root=args.live_root,
+                summary="dry-run preview",
+            )
+            return 0
         print(f"applied artifact: {applied.artifact_id}")
         print(f"status: {applied.status}")
         _record_cli_run(
@@ -520,6 +649,43 @@ def main(argv: list[str] | None = None) -> int:
             artifact_dir=args.artifact,
             live_root=args.live_root,
             summary=f"applied artifact {applied.artifact_id}",
+        )
+        return 0
+
+    if args.command == "revert":
+        try:
+            reverted = revert_artifact(
+                args.artifact,
+                live_root=args.live_root,
+                backup_root=args.backup_root,
+                yes=args.yes,
+            )
+        except DreamRevertError as exc:
+            message = str(exc)
+            print(message)
+            # Confirmation prompt is the only path that raises without --yes
+            # when the caller is interactive; treat it as a non-error and
+            # exit 2 so callers can distinguish "needs confirmation" from
+            # a real failure.
+            if "Re-run with --yes to confirm" in message:
+                return 2
+            _record_cli_run(
+                "revert",
+                success=False,
+                artifact_dir=args.artifact,
+                summary=message.splitlines()[0] if message else "revert failed",
+            )
+            return 1
+        print(f"reverted artifact: {reverted.artifact_id}")
+        print(f"status: {reverted.status}")
+        print(f"reverted_at: {reverted.reverted_at}")
+        _record_cli_run(
+            "revert",
+            success=True,
+            artifact_id=reverted.artifact_id,
+            artifact_status=reverted.status,
+            artifact_dir=args.artifact,
+            summary=f"reverted artifact {reverted.artifact_id}",
         )
         return 0
 
@@ -648,6 +814,14 @@ def main(argv: list[str] | None = None) -> int:
             errors=[result.message] if not result.success and result.message else None,
         )
         return 0 if result.success else 1
+
+    if args.command == "providers":
+        if args.providers_command == "list":
+            rows = list_providers()
+            print(render_providers_table(rows).rstrip())
+            return 0
+        parser.error(f"unknown providers subcommand: {args.providers_command}")
+        return 2
 
     parser.error(f"unknown command: {args.command}")
     return 2

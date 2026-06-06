@@ -183,6 +183,7 @@ def build_inbox(
     *,
     state_filter: set[str] | None = None,
     priority_filter: set[str] | None = None,
+    apply_ready: bool = False,
     limit: int | None = None,
 ) -> InboxResult:
     artifact_root = Path(artifact_root)
@@ -196,6 +197,8 @@ def build_inbox(
         if state_filter and state not in state_filter:
             continue
         if priority_filter and highest_priority not in priority_filter:
+            continue
+        if apply_ready and not _is_apply_ready(artifact):
             continue
         counts = _state_counts(artifact)
         target_kinds: dict[str, int] = {}
@@ -233,6 +236,22 @@ def build_inbox(
     if limit is not None:
         rows = rows[: max(0, limit)]
     return InboxResult(artifact_root=str(artifact_root), total_artifacts=len(artifacts), rows=rows)
+
+
+def _is_apply_ready(artifact: DreamArtifact) -> bool:
+    """A row is apply-ready when its status is non-terminal and no pending proposals remain.
+
+    Statuses considered apply-capable: staged, approved, applied.
+    Every non-rejected proposal must be approved (or already applied).
+    """
+    if artifact.status not in {"staged", "approved", "applied"}:
+        return False
+    for proposal in artifact.proposals:
+        if proposal.rejected:
+            continue
+        if not proposal.approved and not proposal.applied:
+            return False
+    return True
 
 
 def parse_filter(value: str | None) -> set[str] | None:

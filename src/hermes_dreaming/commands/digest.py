@@ -744,6 +744,8 @@ class InboxDigestResult:
     active_artifacts: int
     high_risk_count: int
     high_priority_count: int
+    apply_ready_count: int
+    apply_ready_rows: list[Any]
     newest_artifact_id: str | None
     top_reason: str
     needs_tony_rows: list[Any]
@@ -773,31 +775,42 @@ def build_inbox_digest(
         artifact_root,
         state_filter=state_filter,
         priority_filter=priority_filter,
+        apply_ready=True,
         limit=limit,
     )
     rows = list(inbox.rows)
-    active_rows = [row for row in rows if row.inbox_state in {"staged", "mixed", "approved", "invalid", "pending"}]
-    high_risk_count = sum(1 for row in rows if row.highest_risk == "high")
-    high_priority_count = sum(1 for row in rows if row.highest_priority == "high")
-    newest_artifact_id = max(rows, key=lambda row: row.created_at).artifact_id if rows else None
-    top_reason = next((row.top_reason for row in rows if row.top_reason != "none"), "none")
+    # We re-fetch without apply_ready to also report the full needs-tony / safe-to-ignore sets.
+    full_inbox = build_inbox(
+        artifact_root,
+        state_filter=state_filter,
+        priority_filter=priority_filter,
+        limit=limit,
+    )
+    full_rows = list(full_inbox.rows)
+    active_rows = [row for row in full_rows if row.inbox_state in {"staged", "mixed", "approved", "invalid", "pending"}]
+    high_risk_count = sum(1 for row in full_rows if row.highest_risk == "high")
+    high_priority_count = sum(1 for row in full_rows if row.highest_priority == "high")
+    newest_artifact_id = max(full_rows, key=lambda row: row.created_at).artifact_id if full_rows else None
+    top_reason = next((row.top_reason for row in full_rows if row.top_reason != "none"), "none")
     needs_tony_rows = sorted(
         [
             row
-            for row in rows
+            for row in full_rows
             if row.highest_priority == "high" or row.highest_risk == "high" or row.inbox_state in {"mixed", "invalid", "staged"}
         ],
         key=_inbox_attention_key,
     )
-    if not needs_tony_rows and rows:
-        needs_tony_rows = rows[: min(3, len(rows))]
-    safe_to_ignore_rows = sorted([row for row in rows if row not in needs_tony_rows], key=_inbox_attention_key)
+    if not needs_tony_rows and full_rows:
+        needs_tony_rows = full_rows[: min(3, len(full_rows))]
+    safe_to_ignore_rows = sorted([row for row in full_rows if row not in needs_tony_rows], key=_inbox_attention_key)
     return InboxDigestResult(
         artifact_root=str(artifact_root),
-        total_artifacts=inbox.total_artifacts,
+        total_artifacts=full_inbox.total_artifacts,
         active_artifacts=len(active_rows),
         high_risk_count=high_risk_count,
         high_priority_count=high_priority_count,
+        apply_ready_count=len(rows),
+        apply_ready_rows=rows,
         newest_artifact_id=newest_artifact_id,
         top_reason=top_reason,
         needs_tony_rows=needs_tony_rows,
@@ -831,12 +844,15 @@ def render_inbox_digest(result: InboxDigestResult) -> str:
         f"- Active artifacts: `{result.active_artifacts}`",
         f"- High risk count: `{result.high_risk_count}`",
         f"- High priority count: `{result.high_priority_count}`",
+        f"- Apply-ready count: `{result.apply_ready_count}`",
         f"- Newest artifact: `{result.newest_artifact_id}`" if result.newest_artifact_id else "- Newest artifact: none",
         f"- Top reason: {result.top_reason}",
         "",
-        "## Needs Tony",
+        "## Ready to apply",
         "",
     ]
+    lines.extend(_render_inbox_digest_rows(result.apply_ready_rows))
+    lines.extend(["", "## Needs Tony", ""])
     lines.extend(_render_inbox_digest_rows(result.needs_tony_rows))
     lines.extend(["", "## Safe to ignore", ""])
     lines.extend(_render_inbox_digest_rows(result.safe_to_ignore_rows))

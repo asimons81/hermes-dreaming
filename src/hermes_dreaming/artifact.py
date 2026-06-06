@@ -121,6 +121,11 @@ class DreamArtifact:
     apply_finished_at: str | None = None
     applied_at: str | None = None
     discarded_at: str | None = None
+    reverted_at: str | None = None
+    revert_audit_events: list[dict[str, Any]] = field(default_factory=list)
+    # Ephemeral: only set in-memory during a single apply dry-run call.
+    # Not part of the on-disk artifact contract; excluded from to_dict.
+    dry_run_report: Any = field(default=None, repr=False, compare=False)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'DreamArtifact':
@@ -143,10 +148,14 @@ class DreamArtifact:
             apply_finished_at=data.get('apply_finished_at'),
             applied_at=data.get('applied_at'),
             discarded_at=data.get('discarded_at'),
+            reverted_at=data.get('reverted_at'),
+            revert_audit_events=[dict(item) for item in data.get('revert_audit_events', []) or []],
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.pop("dry_run_report", None)
+        return data
 
 
 def proposal_state(proposal: DreamProposal) -> str:

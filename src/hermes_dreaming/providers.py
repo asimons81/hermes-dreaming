@@ -557,3 +557,61 @@ def build_provider(name: str, *, model: str | None = None, api_key: str | None =
     if normalized in {"ollama", "ollama-native"}:
         return OllamaProvider(model=model or "qwen2.5:3b", api_key=api_key, base_url=base_url or "http://127.0.0.1:11434")
     raise ValueError(f"unknown provider: {name}")
+
+
+@dataclass(slots=True, frozen=True)
+class ProviderInfo:
+    name: str
+    kind: str
+    status: str  # always | optional | missing
+    notes: str
+
+
+def _openai_compat_available() -> bool:
+    try:
+        import openai  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def list_providers() -> list[ProviderInfo]:
+    """Return availability information for the built-in providers.
+
+    The check is import-based: ``status=optional`` means the optional
+    dependency is importable; ``status=missing`` means it is not. We do NOT
+    ping external services (ollama server, etc.) from this command.
+    """
+    rows: list[ProviderInfo] = [
+        ProviderInfo(
+            name="offline-marker",
+            kind="offline",
+            status="always",
+            notes="no API key required",
+        ),
+        ProviderInfo(
+            name="openai-compatible",
+            kind="openai_compat",
+            status="optional" if _openai_compat_available() else "missing",
+            notes="requires [llm] extra (openai package)",
+        ),
+        ProviderInfo(
+            name="ollama",
+            kind="ollama",
+            status="optional",
+            notes="requires local Ollama server and qwen2.5:3b (or override --model)",
+        ),
+    ]
+    return rows
+
+
+def render_providers_table(rows: list[ProviderInfo]) -> str:
+    headers = ("NAME", "KIND", "STATUS", "NOTES")
+    data = [(r.name, r.kind, r.status, r.notes) for r in rows]
+    widths = [max(len(headers[i]), max(len(row[i]) for row in data)) for i in range(len(headers))]
+    line = lambda values: "  ".join(value.ljust(widths[i]) for i, value in enumerate(values))
+    lines = [line(headers), line(tuple("-" * w for w in widths))]
+    for row in data:
+        lines.append(line(row))
+    return "\n".join(lines) + "\n"
