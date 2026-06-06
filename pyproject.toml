@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-dreaming"
-version = "0.3.0"
+version = "0.4.0"
 description = "Staged self-improvement engine for Hermes-style memory, user, skill, and fact updates"
 readme = "README.md"
 license = {file = "LICENSE"}
