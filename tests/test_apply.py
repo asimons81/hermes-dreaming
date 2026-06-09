@@ -9,6 +9,19 @@ from hermes_dreaming import apply as apply_module
 from hermes_dreaming.apply import apply_artifact, discard_artifact, DreamApplyError
 
 
+def _has_exact_child(parent: Path, name: str) -> bool:
+    return any(child.name == name for child in parent.iterdir())
+
+
+def _case_sensitive_dir(path: Path) -> bool:
+    probe = path / "CaseSensitivityProbe"
+    probe.write_text("probe", encoding="utf-8")
+    try:
+        return not (path / "casesensitivityprobe").exists()
+    finally:
+        probe.unlink(missing_ok=True)
+
+
 def _artifact(tmp_path: Path, proposal: DreamProposal) -> tuple[Path, DreamArtifact]:
     artifact = DreamArtifact(
         artifact_id="artifact-apply",
@@ -86,11 +99,14 @@ def test_apply_prefers_existing_uppercase_memory_file(tmp_path: Path) -> None:
 
     assert result.status == "applied"
     assert memory.read_text(encoding="utf-8").strip().endswith("- Keep uppercase installs on the existing file.")
-    assert not (live_root / "memory.md").exists()
+    assert not _has_exact_child(live_root, "memory.md")
     assert (backup_root / "MEMORY.md").exists()
 
 
 def test_apply_prefers_uppercase_memory_when_both_cases_exist(tmp_path: Path) -> None:
+    if not _case_sensitive_dir(tmp_path):
+        pytest.skip("cannot create separate MEMORY.md and memory.md entries on a case-insensitive filesystem")
+
     live_root = tmp_path / "live"
     live_root.mkdir()
     upper_memory = live_root / "MEMORY.md"

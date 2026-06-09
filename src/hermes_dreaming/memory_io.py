@@ -85,12 +85,32 @@ def _alternate_name(name: str) -> str:
     return f"{flipped_stem}.{suffix}"
 
 
+def exact_existing_path(path: Path) -> Path | None:
+    """Return *path* only when that exact directory entry exists.
+
+    ``Path.exists()`` is case-insensitive on the default macOS filesystem, so
+    ``Path("memory.md").exists()`` can be true when the real entry is
+    ``MEMORY.md``. Directory-entry inspection preserves the on-disk spelling and
+    lets callers avoid writing backups or reports under the wrong case.
+    """
+
+    try:
+        for child in path.parent.iterdir():
+            if child.name == path.name:
+                return child
+    except OSError:
+        return None
+    return None
+
+
 def _resolve_existing_path(path: Path) -> Path:
     alternate = path.with_name(_alternate_name(path.name))
-    if path.exists():
-        return path
-    if alternate.exists():
-        return alternate
+    exact = exact_existing_path(path)
+    if exact is not None:
+        return exact
+    alternate_exact = exact_existing_path(alternate)
+    if alternate_exact is not None:
+        return alternate_exact
     return path
 
 
@@ -104,8 +124,9 @@ def resolve_target_path(root: Path, target: str) -> Path:
         raise ValueError(f"Unknown target: {target!r}. Use 'memory' or 'user'.")
 
     for candidate in candidates:
-        if candidate.exists():
-            return candidate
+        exact = exact_existing_path(candidate)
+        if exact is not None:
+            return exact
     return candidates[0]
 
 

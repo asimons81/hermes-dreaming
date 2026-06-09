@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .artifact import DreamArtifact, DreamProposal, DreamArtifactStateError, load_artifact, record_proposal_transition, write_artifact
+from .memory_io import exact_existing_path
 from .validation import validate_artifact
 
 
@@ -89,10 +90,12 @@ def resolve_live_target_path(live_root: Path, proposal: DreamProposal) -> Path:
     if proposal.target_kind in {"memory", "user"}:
         lower = live_root / relative
         upper = live_root / relative.with_name(f"{relative.stem.upper()}{relative.suffix}")
-        if upper.exists():
-            return upper
-        if lower.exists():
-            return lower
+        exact_upper = exact_existing_path(upper)
+        if exact_upper is not None:
+            return exact_upper
+        exact_lower = exact_existing_path(lower)
+        if exact_lower is not None:
+            return exact_lower
         return lower
     return live_root / relative
 
