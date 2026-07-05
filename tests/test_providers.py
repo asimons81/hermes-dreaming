@@ -275,3 +275,72 @@ def test_render_providers_table_emits_table_with_header_and_separator() -> None:
     # Sanity: also works for arbitrary rows.
     custom = [ProviderInfo(name="x", kind="k", status="always", notes="n")]
     assert "x" in render_providers_table(custom)
+
+
+def test_openai_compatible_provider_merges_append_text_proposals_for_same_target() -> None:
+    from hermes_dreaming.artifact import DreamProposal
+    from hermes_dreaming.providers import OpenAICompatibleProvider
+
+    def mp(pid: str, text: str, prov: str = "src.md:1", confidence: float = 0.9) -> DreamProposal:
+        return DreamProposal(
+            id=pid, target_kind="memory", target_path="memory.md", mode="append_text",
+            summary=f"Note {pid}", provenance=[prov], proposed_text=text,
+            approved=False, confidence=confidence, snippet="", risk="low",
+            priority="normal", reason="test", source_quote="", policy_flags=["test"],
+        )
+
+    provider = OpenAICompatibleProvider(api_key="test")
+    proposals = [
+        mp("p1", "- Keep notes short.", "src1.md:1", 0.9),
+        mp("p2", "- Use concrete examples.", "src2.md:1", 0.8),
+    ]
+    result = provider._dedupe_proposals(proposals, payload_hash="test")
+    assert len(result) == 1
+    assert "- Keep notes short." in result[0].proposed_text
+    assert "- Use concrete examples." in result[0].proposed_text
+    assert len(result[0].provenance) == 2
+
+
+def test_openai_compatible_provider_dedupes_identical_append_text() -> None:
+    from hermes_dreaming.artifact import DreamProposal
+    from hermes_dreaming.providers import OpenAICompatibleProvider
+
+    def mp(pid: str, text: str, prov: str = "src.md:1") -> DreamProposal:
+        return DreamProposal(
+            id=pid, target_kind="memory", target_path="memory.md", mode="append_text",
+            summary=f"Note {pid}", provenance=[prov], proposed_text=text,
+            approved=False, snippet="", risk="low", priority="normal",
+            reason="test", source_quote="", policy_flags=["test"],
+        )
+
+    provider = OpenAICompatibleProvider(api_key="test")
+    dup = [
+        mp("p3", "- Same note.", "src1.md:1"),
+        mp("p4", "- Same note.", "src2.md:1"),
+    ]
+    result = provider._dedupe_proposals(dup, payload_hash="test")
+    assert len(result) == 1
+    assert result[0].proposed_text == "- Same note."
+    assert len(result[0].provenance) == 2
+
+
+def test_openai_compatible_provider_still_errors_on_jsonl_append_conflict() -> None:
+    from hermes_dreaming.artifact import DreamProposal
+    from hermes_dreaming.providers import OpenAICompatibleProvider
+
+    def mp(pid: str, text: str, prov: str = "src.md:1") -> DreamProposal:
+        return DreamProposal(
+            id=pid, target_kind="fact", target_path="facts.jsonl", mode="jsonl_append",
+            summary=f"Fact {pid}", provenance=[prov], proposed_text=text,
+            approved=False, snippet="", risk="low", priority="normal",
+            reason="test", source_quote="", policy_flags=["test"],
+        )
+
+    provider = OpenAICompatibleProvider(api_key="test")
+    json_props = [
+        mp("j1", '{"key":"a"}', "src1.md:1"),
+        mp("j2", '{"key":"b"}', "src2.md:1"),
+    ]
+    import pytest
+    with pytest.raises(Exception, match="conflicting proposals"):
+        provider._dedupe_proposals(json_props, payload_hash="test")

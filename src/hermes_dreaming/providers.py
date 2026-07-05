@@ -151,28 +151,45 @@ class OfflineMarkerProvider:
                 deduped.append(proposal)
                 continue
 
-            same_content = (
-                existing.target_kind == proposal.target_kind
-                and existing.mode == proposal.mode
-                and existing.proposed_text == proposal.proposed_text
-            )
-            if not same_content:
-                raise ProviderOutputError(
-                    self.name,
-                    f"conflicting proposals target the same path {proposal.target_path!r}",
-                    payload_hash=payload_hash,
-                )
+            same_mode = existing.mode == proposal.mode
 
-            existing.provenance = self._unique_strings(existing.provenance + proposal.provenance)
-            if proposal.confidence > existing.confidence or (
-                proposal.confidence == existing.confidence and proposal.id < existing.id
-            ):
-                existing.summary = proposal.summary
-                existing.snippet = proposal.snippet
-                existing.confidence = proposal.confidence
-                existing.notes = proposal.notes
-            elif not existing.notes and proposal.notes:
-                existing.notes = proposal.notes
+            if same_mode and existing.mode == "append_text":
+                if existing.proposed_text != proposal.proposed_text:
+                    # Merge distinct append_text proposals
+                    existing.proposed_text = existing.proposed_text.rstrip("\n") + "\n" + proposal.proposed_text
+                existing.provenance = self._unique_strings(existing.provenance + proposal.provenance)
+                if proposal.confidence > existing.confidence or (
+                    proposal.confidence == existing.confidence and proposal.id < existing.id
+                ):
+                    existing.summary = proposal.summary
+                    existing.snippet = proposal.snippet
+                    existing.confidence = proposal.confidence
+                    existing.notes = proposal.notes
+                elif not existing.notes and proposal.notes:
+                    existing.notes = proposal.notes
+            else:
+                # Non-append or mixed modes: require identical content
+                same_content = (
+                    existing.target_kind == proposal.target_kind
+                    and existing.proposed_text == proposal.proposed_text
+                )
+                if not same_content:
+                    raise ProviderOutputError(
+                        self.name,
+                        f"conflicting proposals target the same path {proposal.target_path!r}",
+                        payload_hash=payload_hash,
+                    )
+
+                existing.provenance = self._unique_strings(existing.provenance + proposal.provenance)
+                if proposal.confidence > existing.confidence or (
+                    proposal.confidence == existing.confidence and proposal.id < existing.id
+                ):
+                    existing.summary = proposal.summary
+                    existing.snippet = proposal.snippet
+                    existing.confidence = proposal.confidence
+                    existing.notes = proposal.notes
+                elif not existing.notes and proposal.notes:
+                    existing.notes = proposal.notes
         return deduped
 
     @staticmethod
@@ -448,28 +465,45 @@ class OpenAICompatibleProvider:
                 deduped.append(proposal)
                 continue
 
-            same_content = (
-                existing.target_kind == proposal.target_kind
-                and existing.mode == proposal.mode
-                and existing.proposed_text == proposal.proposed_text
-            )
-            if not same_content:
-                raise ProviderOutputError(
-                    self.name,
-                    f"conflicting proposals target the same path {proposal.target_path!r}",
-                    payload_hash=payload_hash,
-                )
+            same_mode = existing.mode == proposal.mode
 
-            existing.provenance = self._unique_strings(existing.provenance + proposal.provenance)
-            if proposal.confidence > existing.confidence or (
-                proposal.confidence == existing.confidence and proposal.id < existing.id
-            ):
-                existing.summary = proposal.summary
-                existing.snippet = proposal.snippet
-                existing.confidence = proposal.confidence
-                existing.notes = proposal.notes
-            elif not existing.notes and proposal.notes:
-                existing.notes = proposal.notes
+            if same_mode and existing.mode == "append_text":
+                if existing.proposed_text != proposal.proposed_text:
+                    # Merge distinct append_text proposals
+                    existing.proposed_text = existing.proposed_text.rstrip("\n") + "\n" + proposal.proposed_text
+                existing.provenance = self._unique_strings(existing.provenance + proposal.provenance)
+                if proposal.confidence > existing.confidence or (
+                    proposal.confidence == existing.confidence and proposal.id < existing.id
+                ):
+                    existing.summary = proposal.summary
+                    existing.snippet = proposal.snippet
+                    existing.confidence = proposal.confidence
+                    existing.notes = proposal.notes
+                elif not existing.notes and proposal.notes:
+                    existing.notes = proposal.notes
+            else:
+                # Non-append or mixed modes: require identical content
+                same_content = (
+                    existing.target_kind == proposal.target_kind
+                    and existing.proposed_text == proposal.proposed_text
+                )
+                if not same_content:
+                    raise ProviderOutputError(
+                        self.name,
+                        f"conflicting proposals target the same path {proposal.target_path!r}",
+                        payload_hash=payload_hash,
+                    )
+
+                existing.provenance = self._unique_strings(existing.provenance + proposal.provenance)
+                if proposal.confidence > existing.confidence or (
+                    proposal.confidence == existing.confidence and proposal.id < existing.id
+                ):
+                    existing.summary = proposal.summary
+                    existing.snippet = proposal.snippet
+                    existing.confidence = proposal.confidence
+                    existing.notes = proposal.notes
+                elif not existing.notes and proposal.notes:
+                    existing.notes = proposal.notes
         return deduped
 
     @staticmethod
