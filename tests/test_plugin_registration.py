@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pytest
+
 from hermes_dreaming import register
 
 
@@ -64,3 +66,19 @@ def test_registered_handlers_route_to_dreaming_cli(monkeypatch) -> None:
     slash_output = slash_handler("status --artifact-root /tmp/artifacts")
     assert calls[-1] == ["status", "--artifact-root", "/tmp/artifacts"]
     assert slash_output == "Hermes Dreaming finished."
+
+
+def test_registered_cli_handler_raises_system_exit_for_failures(monkeypatch) -> None:
+    def fake_main(argv: list[str]) -> int:
+        return 7
+
+    monkeypatch.setattr("hermes_dreaming.cli.main", fake_main)
+
+    ctx = DummyCtx()
+    register(ctx)
+
+    cli_handler = ctx.cli_commands["dreaming"]["handler_fn"]
+    with pytest.raises(SystemExit) as exc:
+        cli_handler(argparse.Namespace(dreaming_args=["validate", "bad-artifact"]))
+
+    assert exc.value.code == 7

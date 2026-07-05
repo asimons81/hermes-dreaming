@@ -87,6 +87,14 @@ def _alternate_name(name: str) -> str:
 
 def _resolve_existing_path(path: Path) -> Path:
     alternate = path.with_name(_alternate_name(path.name))
+    try:
+        exact_names = {child.name for child in path.parent.iterdir()}
+    except OSError:
+        exact_names = set()
+    if alternate.name in exact_names:
+        return alternate
+    if path.name in exact_names:
+        return path
     if path.exists():
         return path
     if alternate.exists():
