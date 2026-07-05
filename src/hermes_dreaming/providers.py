@@ -321,7 +321,7 @@ class OpenAICompatibleProvider:
         refs: set[str] = set()
         for source in sources:
             for line_number in range(1, source.line_count + 1):
-                refs.add(f"{source.path}:{line_number}")
+                refs.add(f"{Path(source.path).name}:{line_number}")
         return refs
 
     def _normalize_proposal(self, value: object, *, source_refs: set[str], payload_hash: str) -> DreamProposal:
@@ -485,7 +485,7 @@ class OpenAICompatibleProvider:
         return ordered
 
     def _build_prompt(self, sources: list[SourceSnapshot], context: DreamContext) -> str:
-        source_block = "\n\n".join(f"### {source.path}\n{source.content}" for source in sources)
+        source_block = "\n\n".join(f"### {Path(source.path).name}\n{source.content}" for source in sources)
         return (
             "You are Hermes Dreaming, a staged self-improvement engine.\n"
             "Return JSON only with keys: report, proposals, notes.\n"
