@@ -389,20 +389,20 @@ class OpenAICompatibleProvider:
         def require_identifier(key: str) -> str:
             """Like require_string, but tolerates a numeric id.
 
-            LOCAL PATCH (not upstream). Many models emit proposal ids as bare
-            JSON numbers (1, 2, 3) rather than strings; kimi-k2.6 via
-            ollama-cloud does. The id is an opaque handle — an int carries the
-            same information, so rejecting the whole batch over its JSON type
-            discards good proposals for no safety gain. Deliberately narrow:
-            only `id`, and only for int/float. Enum-ish fields (mode, risk,
-            priority, target_kind) stay strict, because there a wrong type
-            usually signals a genuinely confused response.
+            Many models emit proposal ids as bare JSON numbers (1, 2, 3)
+            rather than strings; kimi-k2.6 via ollama-cloud does. The id is
+            an opaque handle — an int carries the same information, so
+            rejecting the whole batch over its JSON type discards good
+            proposals for no safety gain. Deliberately narrow: only `id`,
+            and only for int/float. Enum-ish fields (mode, risk, priority,
+            target_kind) stay strict, because there a wrong type usually
+            signals a genuinely confused response.
             """
             raw = value.get(key)
             if isinstance(raw, bool):  # bool is an int subclass; never an id
                 raise ProviderOutputError(
                     self.name,
-                    f"proposal {key} must be a string",
+                    f"proposal {key} must be a string or number",
                     payload_hash=payload_hash,
                 )
             if isinstance(raw, (int, float)):
@@ -424,13 +424,13 @@ class OpenAICompatibleProvider:
 
         provenance_value = value.get("provenance")
         if isinstance(provenance_value, str):
-            # LOCAL PATCH (not upstream). The code already accepts a bare string
-            # for provenance, but treats the entire string as ONE ref — so a
-            # model that comma-joins two correct refs
-            # ("harvest.md:53,harvest.md:54") is rejected even though both refs
-            # are individually valid. Splitting on commas is the obvious reading
-            # of the string form and loses nothing: each part still has to pass
-            # the source_refs membership check below.
+            # The code already accepts a bare string for provenance, but
+            # treats the entire string as ONE ref — so a model that
+            # comma-joins two correct refs ("harvest.md:53,harvest.md:54")
+            # is rejected even though both refs are individually valid.
+            # Splitting on commas is the obvious reading of the string form
+            # and loses nothing: each part still has to pass the
+            # source_refs membership check below.
             provenance = [
                 part.strip()
                 for part in provenance_value.split(",")
@@ -553,13 +553,13 @@ class OpenAICompatibleProvider:
         return ordered
 
     def _build_prompt(self, sources: list[SourceSnapshot], context: DreamContext) -> str:
-        # LOCAL PATCH (not upstream). The validator requires provenance of the
-        # form `<basename>:<line>` and rejects anything else, but the source
-        # block was rendered without line numbers — so the model was asked to
-        # cite line numbers it had never been shown. kimi-k2.6 cited a section
-        # heading ("harvest.md:Session 4") instead and the whole batch was
-        # rejected. Numbering the lines makes the demanded format actually
-        # derivable from the prompt.
+        # The validator requires provenance of the form `<basename>:<line>`
+        # and rejects anything else, but the source block was rendered
+        # without line numbers — so the model was asked to cite line numbers
+        # it had never been shown. kimi-k2.6 cited a section heading
+        # ("harvest.md:Session 4") instead and the whole batch was rejected.
+        # Numbering the lines makes the demanded format actually derivable
+        # from the prompt.
         blocks: list[str] = []
         for source in sources:
             numbered = "\n".join(
