@@ -386,6 +386,29 @@ class OpenAICompatibleProvider:
                 )
             return text
 
+        def require_identifier(key: str) -> str:
+            """Like require_string, but tolerates a numeric id.
+
+            Many models emit proposal ids as bare JSON numbers (1, 2, 3)
+            rather than strings; kimi-k2.6 via ollama-cloud does. The id is
+            an opaque handle — an int carries the same information, so
+            rejecting the whole batch over its JSON type discards good
+            proposals for no safety gain. Deliberately narrow: only `id`,
+            and only for int/float. Enum-ish fields (mode, risk, priority,
+            target_kind) stay strict, because there a wrong type usually
+            signals a genuinely confused response.
+            """
+            raw = value.get(key)
+            if isinstance(raw, bool):  # bool is an int subclass; never an id
+                raise ProviderOutputError(
+                    self.name,
+                    f"proposal {key} must be a string or number",
+                    payload_hash=payload_hash,
+                )
+            if isinstance(raw, (int, float)):
+                return str(raw)
+            return require_string(key)
+
         proposed_text = require_string("proposed_text")
 
         confidence_value = value.get("confidence")
@@ -401,7 +424,18 @@ class OpenAICompatibleProvider:
 
         provenance_value = value.get("provenance")
         if isinstance(provenance_value, str):
-            provenance = [provenance_value.strip()] if provenance_value.strip() else []
+            # The code already accepts a bare string for provenance, but
+            # treats the entire string as ONE ref — so a model that
+            # comma-joins two correct refs ("harvest.md:53,harvest.md:54")
+            # is rejected even though both refs are individually valid.
+            # Splitting on commas is the obvious reading of the string form
+            # and loses nothing: each part still has to pass the
+            # source_refs membership check below.
+            provenance = [
+                part.strip()
+                for part in provenance_value.split(",")
+                if part.strip()
+            ]
         elif isinstance(provenance_value, list):
             provenance = []
             for item in provenance_value:
@@ -436,7 +470,7 @@ class OpenAICompatibleProvider:
 
         return DreamProposal.from_dict(
             {
-                "id": require_string("id"),
+                "id": require_identifier("id"),
                 "target_kind": require_string("target_kind"),
                 "target_path": require_string("target_path"),
                 "mode": require_string("mode"),
@@ -519,7 +553,22 @@ class OpenAICompatibleProvider:
         return ordered
 
     def _build_prompt(self, sources: list[SourceSnapshot], context: DreamContext) -> str:
-        source_block = "\n\n".join(f"### {Path(source.path).name}\n{source.content}" for source in sources)
+        # The validator requires provenance of the form `<basename>:<line>`
+        # and rejects anything else, but the source block was rendered
+        # without line numbers — so the model was asked to cite line numbers
+        # it had never been shown. kimi-k2.6 cited a section heading
+        # ("harvest.md:Session 4") instead and the whole batch was rejected.
+        # Numbering the lines makes the demanded format actually derivable
+        # from the prompt.
+        blocks: list[str] = []
+        for source in sources:
+            numbered = "\n".join(
+                f"{n}: {line}"
+                for n, line in enumerate(source.content.splitlines(), start=1)
+            )
+            name = Path(source.path).name
+            blocks.append(f"### {name}\n{numbered}")
+        source_block = "\n\n".join(blocks)
         return (
             "You are Hermes Dreaming, a staged self-improvement engine.\n"
             "Return JSON only with keys: report, proposals, notes.\n"
@@ -527,7 +576,7 @@ class OpenAICompatibleProvider:
             "Risk must be one of low, medium, high. Priority must be one of low, normal, high.\n"
             "Reason must explain why the proposal exists. Source_quote must be a short quote from the source. Policy_flags must be a string list.\n"
             "Confidence must be a number between 0.0 and 1.0. Snippet must be the source quote or line that justifies the proposal.\n"
-            "Provenance must be one or more source refs such as path:line.\n"
+            "Provenance must be one or more refs of the form <filename>:<line>, using the exact filename shown in the ### heading and a line number from the numbered source lines below. Example: harvest.md:12. Never cite a section title, heading, or range.\n"
             "Allowed target_kind values: memory, user, skill, fact. Never use source filenames as target_kind.\n"
             "Allowed mode values: append_text, jsonl_append. Never use edit/update/replace.\n"
             "Allowed target_path values: memory.md for memory, user.md for user, facts.jsonl for fact, or skills/<name>.md for skill. Never target source files or absolute paths.\n"

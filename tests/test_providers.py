@@ -196,6 +196,86 @@ def test_openai_compatible_provider_rejects_structured_proposed_text(monkeypatch
         OpenAICompatibleProvider(model="qwen2.5:3b", api_key="ollama").generate([_source()], _context(tmp_path))
 
 
+def test_openai_compatible_provider_accepts_bare_numeric_id(monkeypatch, tmp_path: Path) -> None:
+    _install_fake_openai(
+        monkeypatch,
+        """{
+  "report": "Report body",
+  "proposals": [
+    {
+      "id": 1,
+      "target_kind": "user",
+      "target_path": "user.md",
+      "mode": "append_text",
+      "summary": "User prefers two strong options.",
+      "provenance": "session.md:1",
+      "confidence": 0.92,
+      "snippet": "User: Prefer two strong options over six weak ones.",
+      "proposed_text": "- Restaurant design drafts should offer two strong options, not six weak ones.",
+      "risk": "medium",
+      "priority": "high",
+      "reason": "user preference is explicit and actionable",
+      "source_quote": "User: Prefer two strong options over six weak ones.",
+      "policy_flags": ["profile_preference", "safe_append"],
+      "approved": true
+    }
+  ],
+  "notes": []
+}""",
+    )
+
+    report, proposals, notes = OpenAICompatibleProvider(model="qwen2.5:3b", api_key="ollama").generate(
+        [_source()], _context(tmp_path)
+    )
+
+    assert report == "Report body"
+    assert len(proposals) == 1
+    assert proposals[0].id == "1"
+
+
+def test_openai_compatible_provider_splits_comma_joined_provenance(monkeypatch, tmp_path: Path) -> None:
+    two_line_source = SourceSnapshot(
+        path="sources/session.md",
+        kind="file",
+        content="User: Prefer two strong options over six weak ones.\nAssistant: Noted.",
+        sha256="abc123",
+        line_count=2,
+    )
+    _install_fake_openai(
+        monkeypatch,
+        """{
+  "report": "Report body",
+  "proposals": [
+    {
+      "id": "valid",
+      "target_kind": "user",
+      "target_path": "user.md",
+      "mode": "append_text",
+      "summary": "User prefers two strong options.",
+      "provenance": "session.md:1,session.md:2",
+      "confidence": 0.92,
+      "snippet": "User: Prefer two strong options over six weak ones.",
+      "proposed_text": "- Restaurant design drafts should offer two strong options, not six weak ones.",
+      "risk": "medium",
+      "priority": "high",
+      "reason": "user preference is explicit and actionable",
+      "source_quote": "User: Prefer two strong options over six weak ones.",
+      "policy_flags": ["profile_preference", "safe_append"],
+      "approved": true
+    }
+  ],
+  "notes": []
+}""",
+    )
+
+    report, proposals, notes = OpenAICompatibleProvider(model="qwen2.5:3b", api_key="ollama").generate(
+        [two_line_source], _context(tmp_path)
+    )
+
+    assert len(proposals) == 1
+    assert proposals[0].provenance == ["session.md:1", "session.md:2"]
+
+
 def test_ollama_provider_uses_native_json_chat(monkeypatch, tmp_path: Path) -> None:
     captured = {}
 
